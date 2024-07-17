@@ -226,6 +226,10 @@ func isLive(subdomain string) bool {
 func takeScreenshots(outputDir string) {
 	fmt.Println("Taking screenshots of live subdomains...")
 	liveFile := outputDir + "/ghostrecon-live.txt"
+	if _, err := os.Stat(liveFile); os.IsNotExist(err) {
+		fmt.Printf("Warning: Live subdomains file %s does not exist.\n", liveFile)
+		return
+	}
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("cat %s | aquatone -out %s/aquatone", liveFile, outputDir))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("Error running aquatone: %v\nOutput: %s\n", err, string(output))
