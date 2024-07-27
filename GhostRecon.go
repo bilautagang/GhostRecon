@@ -39,7 +39,10 @@ func main() {
 	checkLiveDeadSubdomains(uniqueSubdomains, outputDir)
 
 	// Take screenshots of live subdomains
-	takeScreenshots(outputDir)
+	takeScreenshots(outputDir + "/ghostrecon-live.txt", outputDir+"/aquatone-live")
+
+	// Take screenshots of 404 subdomains
+	takeScreenshots(outputDir + "/ghostrecon-404.txt", outputDir+"/aquatone-404")
 
 	fmt.Println("Reconnaissance completed.")
 }
@@ -182,13 +185,17 @@ func checkLiveDeadSubdomains(subdomains []string, outputDir string) {
 	var wg sync.WaitGroup
 	liveSubdomains := make(chan string, len(subdomains))
 	deadSubdomains := make(chan string, len(subdomains))
+	errorSubdomains := make(chan string, len(subdomains))
 
 	for _, subdomain := range subdomains {
 		wg.Add(1)
 		go func(subdomain string) {
 			defer wg.Done()
-			if isLive(subdomain) {
+			statusCode := getStatusCode(subdomain)
+			if statusCode == 200 || statusCode == 301 || statusCode == 302 {
 				liveSubdomains <- subdomain
+			} else if statusCode == 404 {
+				errorSubdomains <- subdomain
 			} else {
 				deadSubdomains <- subdomain
 			}
@@ -198,42 +205,42 @@ func checkLiveDeadSubdomains(subdomains []string, outputDir string) {
 	wg.Wait()
 	close(liveSubdomains)
 	close(deadSubdomains)
+	close(errorSubdomains)
 
-	var live, dead []string
+	var live, dead, errors []string
 	for sub := range liveSubdomains {
 		live = append(live, sub)
 	}
 	for sub := range deadSubdomains {
 		dead = append(dead, sub)
 	}
+	for sub := range errorSubdomains {
+		errors = append(errors, sub)
+	}
 
 	saveToFile(live, outputDir+"/ghostrecon-live.txt")
 	saveToFile(dead, outputDir+"/ghostrecon-dead.txt")
+	saveToFile(errors, outputDir+"/ghostrecon-404.txt")
 }
 
-func isLive(subdomain string) bool {
+func getStatusCode(subdomain string) int {
 	httpClient := http.Client{Timeout: 5 * time.Second}
 	for _, scheme := range []string{"http", "https"} {
 		url := fmt.Sprintf("%s://%s", scheme, subdomain)
 		resp, err := httpClient.Get(url)
-		if err == nil && (resp.StatusCode == 200 || resp.StatusCode == 301 || resp.StatusCode == 302) {
-			return true
+		if err == nil {
+			return resp.StatusCode
 		}
 	}
-	return false
+	return 0
 }
 
-func takeScreenshots(outputDir string) {
-	fmt.Println("Taking screenshots of live subdomains...")
-	liveFile := outputDir + "/ghostrecon-live.txt"
-	if _, err := os.Stat(liveFile); os.IsNotExist(err) {
-		fmt.Printf("Warning: Live subdomains file %s does not exist.\n", liveFile)
-		return
-	}
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("cat %s | aquatone -out %s/aquatone", liveFile, outputDir))
+func takeScreenshots(inputFile, outputDir string) {
+	fmt.Printf("Taking screenshots of subdomains listed in %s...\n", inputFile)
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("cat %s | aquatone -out %s", inputFile, outputDir))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("Error running aquatone: %v\nOutput: %s\n", err, string(output))
 	} else {
-		fmt.Printf("Aquatone completed successfully. Screenshots saved in %s/aquatone.\n", outputDir)
+		fmt.Printf("Aquatone completed successfully. Screenshots saved in %s.\n", outputDir)
 	}
 }
