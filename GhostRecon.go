@@ -14,7 +14,7 @@ import (
 
 func main() {
 	// Check and install required tools
-	tools := []string{"python", "pip", "subfinder", "assetfinder", "dnsrecon", "findomain", "aquatone"}
+	tools := []string{"subfinder", "assetfinder", "dnsrecon", "findomain", "aquatone"}
 	for _, tool := range tools {
 		checkAndInstall(tool)
 	}
@@ -39,10 +39,10 @@ func main() {
 	checkLiveDeadSubdomains(uniqueSubdomains, outputDir)
 
 	// Take screenshots of live subdomains
-	takeScreenshots(outputDir + "/ghostrecon-live.txt", outputDir+"/aquatone-live")
+	takeScreenshots(outputDir+"/ghostrecon-live.txt", outputDir+"/aquatone-live")
 
 	// Take screenshots of 404 subdomains
-	takeScreenshots(outputDir + "/ghostrecon-404.txt", outputDir+"/aquatone-404")
+	takeScreenshots(outputDir+"/ghostrecon-404.txt", outputDir+"/aquatone-404")
 
 	fmt.Println("Reconnaissance completed.")
 }
@@ -53,10 +53,6 @@ func checkAndInstall(tool string) {
 		fmt.Printf("Installing %s...\n", tool)
 		var installCmd *exec.Cmd
 		switch tool {
-		case "python":
-			installCmd = exec.Command("sh", "-c", "sudo pacman -S --noconfirm python")
-		case "pip":
-			installCmd = exec.Command("sh", "-c", "sudo pacman -S --noconfirm python-pip")
 		case "aquatone":
 			installCmd = exec.Command("sh", "-c", "go install github.com/michenriksen/aquatone@latest")
 		default:
@@ -120,12 +116,6 @@ func findSubdomains(website, outputDir string) {
 			} else {
 				fmt.Printf("%s completed successfully.\n", tool.name)
 			}
-
-			// Check if the output file exists before processing
-			outputFilePath := fmt.Sprintf("%s/%s", outputDir, tool.filename)
-			if _, err := os.Stat(outputFilePath); os.IsNotExist(err) {
-				fmt.Printf("Warning: File %s does not exist.\n", outputFilePath)
-			}
 		}(tool)
 	}
 	wg.Wait()
@@ -135,7 +125,6 @@ func removeDuplicates(outputDir string) []string {
 	subdomainFiles := []string{
 		outputDir + "/subfinder.txt",
 		outputDir + "/assetfinder.txt",
-		outputDir + "/dnsrecon.xml",
 		outputDir + "/findomain.txt",
 	}
 
