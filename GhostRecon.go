@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	// Check and install required tools
+	// Check and install required tools (skipping Sublist3r)
 	tools := []string{"subfinder", "assetfinder", "dnsrecon", "findomain", "aquatone"}
 	for _, tool := range tools {
 		checkAndInstall(tool)
@@ -98,6 +98,7 @@ func findSubdomains(website, outputDir string) {
 		{"assetfinder", fmt.Sprintf("assetfinder --subs-only %s | tee %s/assetfinder.txt", website, outputDir), "assetfinder.txt"},
 		{"dnsrecon", fmt.Sprintf("dnsrecon -d %s -t std --xml %s/dnsrecon.xml", website, outputDir), "dnsrecon.xml"},
 		{"findomain", fmt.Sprintf("findomain -t %s -u %s/findomain.txt", website, outputDir), "findomain.txt"},
+		{"sublist3r", fmt.Sprintf("sublist3r -d %s -o %s/sublist3r.txt", website, outputDir), "sublist3r.txt"},
 	}
 
 	var wg sync.WaitGroup
@@ -126,6 +127,7 @@ func removeDuplicates(outputDir string) []string {
 		outputDir + "/subfinder.txt",
 		outputDir + "/assetfinder.txt",
 		outputDir + "/findomain.txt",
+		outputDir + "/sublist3r.txt",
 	}
 
 	subdomainSet := make(map[string]struct{})
