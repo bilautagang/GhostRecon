@@ -2,236 +2,207 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
-	"net/http"
+	"log"
 	"os"
 	"os/exec"
-	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
 func main() {
-	// Check and install required tools (skipping Sublist3r)
-	tools := []string{"subfinder", "assetfinder", "dnsrecon", "findomain", "aquatone"}
-	for _, tool := range tools {
-		checkAndInstall(tool)
-	}
+	fmt.Print("Enter the target domain: ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	domain := scanner.Text()
 
-	// Get website URL
-	website := getUserInput("Enter the website URL: ")
-
-	// Determine output directory
-	outputDir := fmt.Sprintf("/home/%s/ghostrecon-%s", getUsername(), strings.ReplaceAll(website, ".", "-"))
-
-	// Create output directory
-	createDirectory(outputDir)
-
-	// Find subdomains
-	findSubdomains(website, outputDir)
-
-	// Remove duplicates and save to master file
-	uniqueSubdomains := removeDuplicates(outputDir)
-	saveToFile(uniqueSubdomains, outputDir+"/ghostrecon-uniq.txt")
-
-	// Check for live and dead subdomains
-	checkLiveDeadSubdomains(uniqueSubdomains, outputDir)
-
-	// Take screenshots of live subdomains
-	takeScreenshots(outputDir+"/ghostrecon-live.txt", outputDir+"/aquatone-live")
-
-	// Take screenshots of 404 subdomains
-	takeScreenshots(outputDir+"/ghostrecon-404.txt", outputDir+"/aquatone-404")
-
-	fmt.Println("Reconnaissance completed.")
-}
-
-func checkAndInstall(tool string) {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("command -v %s", tool))
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Installing %s...\n", tool)
-		var installCmd *exec.Cmd
-		switch tool {
-		case "aquatone":
-			installCmd = exec.Command("sh", "-c", "go install github.com/michenriksen/aquatone@latest")
-		default:
-			installCmd = exec.Command("sh", "-c", fmt.Sprintf("sudo pacman -S --noconfirm %s", tool))
-		}
-		if err := installCmd.Run(); err != nil {
-			fmt.Printf("Error installing %s: %v\n", tool, err)
-			os.Exit(1)
-		}
-	}
-}
-
-func getUserInput(prompt string) string {
-	var input string
-	fmt.Print(prompt)
-	fmt.Scanln(&input)
-	return input
-}
-
-func getUsername() string {
-	currentUser, err := user.Current()
-	if err != nil {
-		fmt.Printf("Error getting current user: %v\n", err)
-		os.Exit(1)
-	}
-	return currentUser.Username
-}
-
-func createDirectory(dirPath string) {
-	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		fmt.Printf("Error creating output directory %s: %v\n", dirPath, err)
-		os.Exit(1)
-	}
-}
-
-func findSubdomains(website, outputDir string) {
-	subdomainTools := []struct {
-		name     string
-		command  string
-		filename string
-	}{
-		{"subfinder", fmt.Sprintf("subfinder -d %s -o %s/subfinder.txt", website, outputDir), "subfinder.txt"},
-		{"assetfinder", fmt.Sprintf("assetfinder --subs-only %s | tee %s/assetfinder.txt", website, outputDir), "assetfinder.txt"},
-		{"dnsrecon", fmt.Sprintf("dnsrecon -d %s -t std --xml %s/dnsrecon.xml", website, outputDir), "dnsrecon.xml"},
-		{"findomain", fmt.Sprintf("findomain -t %s -u %s/findomain.txt", website, outputDir), "findomain.txt"},
-		{"sublist3r", fmt.Sprintf("sublist3r -d %s -o %s/sublist3r.txt", website, outputDir), "sublist3r.txt"},
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(len(subdomainTools))
-	for _, tool := range subdomainTools {
-		go func(tool struct {
-			name     string
-			command  string
-			filename string
-		}) {
-			defer wg.Done()
-			fmt.Printf("Running %s...\n", tool.name)
-			cmd := exec.Command("sh", "-c", tool.command)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				fmt.Printf("Error running %s: %v\nOutput: %s\n", tool.name, err, string(output))
-			} else {
-				fmt.Printf("%s completed successfully.\n", tool.name)
-			}
-		}(tool)
-	}
-	wg.Wait()
-}
-
-func removeDuplicates(outputDir string) []string {
-	subdomainFiles := []string{
-		outputDir + "/subfinder.txt",
-		outputDir + "/assetfinder.txt",
-		outputDir + "/findomain.txt",
-		outputDir + "/sublist3r.txt",
-	}
-
-	subdomainSet := make(map[string]struct{})
-	for _, file := range subdomainFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			fmt.Printf("Warning: File %s does not exist.\n", file)
-			continue
-		}
-		f, err := os.Open(file)
-		if err != nil {
-			fmt.Printf("Error opening file %s: %v\n", file, err)
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			subdomain := scanner.Text()
-			subdomainSet[subdomain] = struct{}{}
-		}
-		f.Close()
-	}
-
-	var uniqueSubdomains []string
-	for subdomain := range subdomainSet {
-		uniqueSubdomains = append(uniqueSubdomains, subdomain)
-	}
-
-	return uniqueSubdomains
-}
-
-func saveToFile(data []string, filepath string) {
-	f, err := os.Create(filepath)
-	if err != nil {
-		fmt.Printf("Error creating file %s: %v\n", filepath, err)
+	if domain == "" {
+		fmt.Println("Domain cannot be empty.")
 		return
 	}
-	defer f.Close()
 
-	writer := bufio.NewWriter(f)
-	for _, line := range data {
-		writer.WriteString(line + "\n")
+	// Create output folder in /home
+	baseFolder := filepath.Join("/home", fmt.Sprintf("ghostrecon_%s", domain))
+	err := os.MkdirAll(baseFolder, 0755)
+	if err != nil {
+		log.Fatalf("Error creating folder: %v", err)
 	}
-	writer.Flush()
+
+	// Run all tools concurrently
+	results := runAllToolsConcurrently(domain, baseFolder)
+
+	// Consolidate and clean subdomains
+	cleanedSubdomains := consolidateAndCleanSubdomains(domain, baseFolder, results)
+
+	// Check for live subdomains
+	saveLiveSubdomains(domain, baseFolder, cleanedSubdomains)
 }
 
-func checkLiveDeadSubdomains(subdomains []string, outputDir string) {
+// Run all tools concurrently
+func runAllToolsConcurrently(domain, folder string) map[string]string {
+	fmt.Println("Running all tools concurrently...")
 	var wg sync.WaitGroup
-	liveSubdomains := make(chan string, len(subdomains))
-	deadSubdomains := make(chan string, len(subdomains))
-	errorSubdomains := make(chan string, len(subdomains))
+	results := make(map[string]string)
+	mu := sync.Mutex{}
 
-	for _, subdomain := range subdomains {
+	tools := map[string]func(string, string) string{
+		"Sublist3r":   runSublist3r,
+		"Assetfinder": runAssetfinder,
+		"Subfinder":   runSubfinder,
+	}
+
+	for toolName, toolFunc := range tools {
 		wg.Add(1)
-		go func(subdomain string) {
+		go func(name string, tool func(string, string) string) {
 			defer wg.Done()
-			statusCode := getStatusCode(subdomain)
-			if statusCode == 200 || statusCode == 301 || statusCode == 302 {
-				liveSubdomains <- subdomain
-			} else if statusCode == 404 {
-				errorSubdomains <- subdomain
-			} else {
-				deadSubdomains <- subdomain
-			}
-		}(subdomain)
+			output := tool(domain, folder)
+			mu.Lock()
+			results[name] = output
+			mu.Unlock()
+		}(toolName, toolFunc)
 	}
 
 	wg.Wait()
-	close(liveSubdomains)
-	close(deadSubdomains)
-	close(errorSubdomains)
-
-	var live, dead, errors []string
-	for sub := range liveSubdomains {
-		live = append(live, sub)
-	}
-	for sub := range deadSubdomains {
-		dead = append(dead, sub)
-	}
-	for sub := range errorSubdomains {
-		errors = append(errors, sub)
-	}
-
-	saveToFile(live, outputDir+"/ghostrecon-live.txt")
-	saveToFile(dead, outputDir+"/ghostrecon-dead.txt")
-	saveToFile(errors, outputDir+"/ghostrecon-404.txt")
+	return results
 }
 
-func getStatusCode(subdomain string) int {
-	httpClient := http.Client{Timeout: 5 * time.Second}
-	for _, scheme := range []string{"http", "https"} {
-		url := fmt.Sprintf("%s://%s", scheme, subdomain)
-		resp, err := httpClient.Get(url)
-		if err == nil {
-			return resp.StatusCode
+// Run Sublist3r
+func runSublist3r(domain, folder string) string {
+	fmt.Printf("Running Sublist3r for %s\n", domain)
+	outputFile := filepath.Join(folder, fmt.Sprintf("%s_sublist3r_%s.txt", "Sublist3r", domain))
+	cmd := exec.Command("sublist3r", "-d", domain, "-o", outputFile)
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("Error running Sublist3r: %v", err)
+	}
+	fmt.Printf("Subdomains saved to %s\n", outputFile)
+	return outputFile
+}
+
+// Run Assetfinder
+func runAssetfinder(domain, folder string) string {
+	fmt.Printf("Running Assetfinder for %s\n", domain)
+	outputFile := filepath.Join(folder, fmt.Sprintf("%s_assetfinder_%s.txt", "Assetfinder", domain))
+	cmd := exec.Command("assetfinder", "--subs-only", domain)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("Error running Assetfinder: %v", err)
+	}
+	err = os.WriteFile(outputFile, out.Bytes(), 0644)
+	if err != nil {
+		log.Printf("Error saving Assetfinder output: %v", err)
+	}
+	fmt.Printf("Subdomains saved to %s\n", outputFile)
+	return outputFile
+}
+
+// Run Subfinder
+func runSubfinder(domain, folder string) string {
+	fmt.Printf("Running Subfinder for %s\n", domain)
+	outputFile := filepath.Join(folder, fmt.Sprintf("%s_subfinder_%s.txt", "Subfinder", domain))
+	cmd := exec.Command("subfinder", "-d", domain, "-o", outputFile)
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("Error running Subfinder: %v", err)
+	}
+	fmt.Printf("Subdomains saved to %s\n", outputFile)
+	return outputFile
+}
+
+// Check domain status using httprobe
+func checkDomainStatus(domain string) string {
+	cmd := exec.Command("httprobe", domain)
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error running httprobe: %v", err)
+		return "dead"
+	}
+	output := string(out)
+	if strings.Contains(output, domain) {
+		return "live"
+	}
+	return "dead"
+}
+
+// Consolidate and clean subdomains
+func consolidateAndCleanSubdomains(domain, folder string, results map[string]string) []string {
+	fmt.Println("Consolidating and cleaning subdomains...")
+	subdomainSet := make(map[string]struct{})
+	for _, file := range results {
+		fileContent, err := os.ReadFile(file)
+		if err != nil {
+			log.Printf("Error reading file %s: %v", file, err)
+			continue
+		}
+		lines := strings.Split(string(fileContent), "\n")
+		for _, line := range lines {
+			cleaned := strings.TrimSpace(line)
+			if cleaned != "" {
+				subdomainSet[cleaned] = struct{}{}
+			}
 		}
 	}
-	return 0
+
+	cleanedSubdomains := make([]string, 0, len(subdomainSet))
+	for subdomain := range subdomainSet {
+		cleanedSubdomains = append(cleanedSubdomains, subdomain)
+	}
+
+	cleanedFile := filepath.Join(folder, fmt.Sprintf("%s_cleaned_subdomains.txt", domain))
+	err := os.WriteFile(cleanedFile, []byte(strings.Join(cleanedSubdomains, "\n")), 0644)
+	if err != nil {
+		log.Fatalf("Error saving cleaned subdomains: %v", err)
+	}
+	fmt.Printf("Cleaned subdomains saved to %s\n", cleanedFile)
+
+	return cleanedSubdomains
 }
 
-func takeScreenshots(inputFile, outputDir string) {
-	fmt.Printf("Taking screenshots of subdomains listed in %s...\n", inputFile)
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("cat %s | aquatone -out %s", inputFile, outputDir))
-	if output, err := cmd.CombinedOutput(); err != nil {
-		fmt.Printf("Error running aquatone: %v\nOutput: %s\n", err, string(output))
-	} else {
-		fmt.Printf("Aquatone completed successfully. Screenshots saved in %s.\n", outputDir)
+// Save live subdomains using httprobe
+func saveLiveSubdomains(domain, folder string, subdomains []string) {
+	const workerCount = 10 // Adjust the number of workers based on system capacity
+	liveSubdomains := make([]string, 0)
+	var mu sync.Mutex
+	wg := sync.WaitGroup{}
+	tasks := make(chan string, len(subdomains))
+
+	// Worker function
+	worker := func() {
+		defer wg.Done()
+		for sub := range tasks {
+			status := checkDomainStatus(sub)
+			mu.Lock()
+			if status == "live" {
+				liveSubdomains = append(liveSubdomains, sub)
+			}
+			mu.Unlock()
+		}
 	}
+
+	// Start workers
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go worker()
+	}
+
+	// Distribute tasks
+	for _, subdomain := range subdomains {
+		tasks <- subdomain
+	}
+	close(tasks)
+
+	// Wait for all workers to finish
+	wg.Wait()
+
+	// Save live subdomains
+	liveFilePath := filepath.Join(folder, fmt.Sprintf("%s_live_subdomains.txt", domain))
+	err := os.WriteFile(liveFilePath, []byte(strings.Join(liveSubdomains, "\n")), 0644)
+	if err != nil {
+		log.Fatalf("Error saving live subdomains: %v", err)
+	}
+	fmt.Printf("Live subdomains saved to %s\n", liveFilePath)
 }
